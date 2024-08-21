@@ -1,5 +1,6 @@
+#[derive(Debug)]
 pub struct TokenAmount(pub u64);
-
+#[derive(Debug)]
 pub struct StakedTokenAmount(pub u64);
 
 pub struct LpTokenAmount(pub u64);

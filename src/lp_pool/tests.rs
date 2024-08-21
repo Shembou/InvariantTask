@@ -58,7 +58,7 @@ mod tests {
     }
     //TODO: The last part of this test throws error
     #[test]
-    fn test_swap_and_add_liquidity() {
+    fn test_story() {
         let mut pool = setup_pool(1500000, 10, 900, 90000000).expect("Failed to initialize pool");
 
         add_liquidity(&mut pool, 100000000).expect("Failed to add initial liquidity");
@@ -70,12 +70,10 @@ mod tests {
         );
 
         let new_lp_tokens = add_liquidity(&mut pool, 10000000).expect("Failed to add liquidity");
-        // assert_eq!(
-        //     new_lp_tokens.0, 9999100,
-        //     "Incorrect LP token amount after adding liquidity"
-        // );
-        // pool.lp_token_amount.0 += 9999100;
-        // pool.token_amount.0 += 10000000;
+        assert_eq!(
+            new_lp_tokens.0, 9999100,
+            "Incorrect LP token amount after adding liquidity"
+        );
 
         let swapped_tokens2 =
             swap_tokens(&mut pool, 30000000).expect("Failed to swap staked tokens");
@@ -83,6 +81,11 @@ mod tests {
             swapped_tokens2.0, 43442370,
             "Incorrect LP token amount after adding liquidity"
         );
+
+        let remove_liquidity =
+            remove_liquidity(&mut pool, 109991000).expect("Error while removing tokens");
+        assert_eq!(remove_liquidity.0 .0, 57566630, "Error");
+        assert_eq!(remove_liquidity.1 .0, 36000000, "Error");
     }
 
     #[test]
@@ -97,16 +100,4 @@ mod tests {
             "Incorrect token share after removing liquidity"
         );
     }
-
-    // #[test]
-    // fn test_swap_30_staked_tokens() {
-    //     let mut pool = setup_pool(1.5, 0.1, 9.0, 90.0).expect("Failed to initialize pool");
-    //     add_liquidity(&mut pool, 101.009).expect("Failed to add liquidity");
-
-    //     let swapped_tokens = swap_tokens(&mut pool, 30.0).expect("Failed to swap staked tokens");
-    //     assert_eq!(
-    //         swapped_tokens.0, 43.44237,
-    //         "Incorrect token amount after swapping 30 staked tokens"
-    //     );
-    // }
 }
