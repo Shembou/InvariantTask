@@ -97,7 +97,7 @@ impl LpPool {
         lp_token_amount: LpTokenAmount,
     ) -> Result<(TokenAmount, StakedTokenAmount), Errors> {
         //TODO: Add remove_liquidity logic
-        let removal_ratio = lp_token_amount.0 / self.liquidity_target.0;
+        //let removal_ratio = lp_token_amount.0 / self.liquidity_target.0;
         if self.st_token_amount.0 != 0 {
             let equivalent_token_amount =
                 (self.st_token_amount.0 * self.price.0) / FIXED_POINTS_DECIMALS_MULTIPLIER;
@@ -106,41 +106,34 @@ impl LpPool {
                 self.max_fee.0,
                 self.min_fee.0,
                 self.liquidity_target.0,
-                self.token_amount.0 - equivalent_token_amount,
+                self.lp_token_amount.0 - equivalent_token_amount,
             )?;
             let fee_multiplier = (FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0) - fee_percentage;
             let f64_token_value = (equivalent_token_amount as f64 * fee_multiplier as f64)
                 / (FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0);
-            let mut final_token_amount = utils::round_up_to_nearest_ten(f64_token_value);
-            if final_token_amount >= lp_token_amount.0 {
-                final_token_amount -= lp_token_amount.0;
+            let final_st_token_amount = utils::round_up_to_nearest_ten(f64_token_value);
 
-                let staked_tokens_left = final_token_amount / self.price.0;
-                self.st_token_amount.0 -= staked_tokens_left;
-                return Ok((TokenAmount(0), StakedTokenAmount(staked_tokens_left)));
+            if final_st_token_amount >= lp_token_amount.0 {
+                return Ok((TokenAmount(0), StakedTokenAmount(lp_token_amount.0)));
             } else {
-                let mut total_tokens = lp_token_amount.0;
-                total_tokens -= final_token_amount;
-                let calculated_fee = utils::calculate_added_liquidity_fee(
+                let left_amount = lp_token_amount.0 - final_st_token_amount;
+                let fee = utils::calculate_added_liquidity_fee(
                     self.max_fee.0,
                     self.min_fee.0,
                     self.liquidity_target.0,
-                    total_tokens,
+                    self.lp_token_amount.0 - left_amount,
                 )?;
-                let fee_multiplier =
-                    (FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0) - calculated_fee;
-                let f64_token_value = (total_tokens as f64 * fee_multiplier as f64)
+                let fee_multiplier = (FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0) - fee;
+                let f64_token_value = (left_amount as f64 * fee_multiplier as f64)
                     / (FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0);
-                total_tokens = utils::round_up_to_nearest_ten(f64_token_value);
-
+                let final_st_token_amount = utils::round_up_to_nearest_ten(f64_token_value);
                 return Ok((
-                    TokenAmount(total_tokens),
+                    TokenAmount(final_st_token_amount),
                     StakedTokenAmount(self.st_token_amount.0),
                 ));
             }
         } else {
-            self.token_amount.0 -= lp_token_amount.0;
-            return Ok((TokenAmount(self.token_amount.0), StakedTokenAmount(0)));
+            return Err(Errors::InvalidLiquidityTarget);
         }
     }
 
