@@ -4,4 +4,9 @@ pub enum Errors {
     InvalidLiquidityTarget,
     MultiplicationError,
     InsufficientLiquidity,
+    DivisionByZero,
+    SubtractionOverflow,
+    CalculationError,
+    AdditionOverflow,
+    InvalidTokenAmount,
 }

@@ -4,9 +4,17 @@ use super::utils::*;
 use crate::lp_pool::utils::utils::FIXED_POINTS_DECIMALS_MULTIPLIER;
 
 impl LpPool {
-    fn calculate_total_lp_tokens(self: &mut Self) -> Result<u64, Errors> {
-        let equivalent_token_amount =
-            (self.st_token_amount.0 * self.price.0) / FIXED_POINTS_DECIMALS_MULTIPLIER;
+    fn calculate_total_staked_token_amount(self: &mut Self) -> Result<u64, Errors> {
+        if self.price.0 == 0 {
+            return Err(Errors::DivisionByZero);
+        }
+
+        let equivalent_token_amount = self
+            .st_token_amount
+            .0
+            .checked_mul(self.price.0)
+            .ok_or(Errors::MultiplicationError)?
+            / FIXED_POINTS_DECIMALS_MULTIPLIER;
 
         let fee_percentage: Result<f64, Errors> = if self.st_token_amount.0 == 0 {
             Ok(self.min_fee.0 as f64)
@@ -15,7 +23,10 @@ impl LpPool {
                 self.max_fee.0,
                 self.min_fee.0,
                 self.liquidity_target.0,
-                self.lp_token_amount.0 - equivalent_token_amount,
+                self.lp_token_amount
+                    .0
+                    .checked_sub(equivalent_token_amount)
+                    .ok_or(Errors::SubtractionOverflow)?,
             )?)
         };
         let fee_multiplier = (FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0) - fee_percentage?;
@@ -24,6 +35,10 @@ impl LpPool {
 
         let total_lp_tokens = (equivalent_token_amount as f64 - final_token_amount as f64)
             + self.lp_token_amount.0 as f64;
+
+        if total_lp_tokens < 0.0 {
+            return Err(Errors::CalculationError);
+        }
         return Ok(total_lp_tokens as u64);
     }
 
@@ -54,7 +69,7 @@ impl LpPool {
         let lp_tokens_minted = if self.lp_token_amount.0 == 0 {
             LpTokenAmount(token_amount.0)
         } else {
-            let calculated_lp_tokens = self.calculate_total_lp_tokens()?;
+            let calculated_lp_tokens = self.calculate_total_staked_token_amount()?;
             let final_token_amount = utils::multiply_add_liquidity_token_amount(
                 self.token_amount.0,
                 calculated_lp_tokens,
@@ -62,8 +77,16 @@ impl LpPool {
             LpTokenAmount(final_token_amount)
         };
 
-        self.token_amount.0 += lp_tokens_minted.0;
-        self.lp_token_amount.0 += lp_tokens_minted.0;
+        self.token_amount.0 = self
+            .token_amount
+            .0
+            .checked_add(lp_tokens_minted.0)
+            .ok_or(Errors::AdditionOverflow)?;
+        self.lp_token_amount.0 = self
+            .lp_token_amount
+            .0
+            .checked_add(lp_tokens_minted.0)
+            .ok_or(Errors::AdditionOverflow)?;
 
         Ok(lp_tokens_minted)
     }
@@ -120,6 +143,9 @@ impl LpPool {
     }
 
     pub fn swap(&mut self, staked_token_amount: StakedTokenAmount) -> Result<TokenAmount, Errors> {
+        if staked_token_amount.0 == 0 {
+            return Err(Errors::InvalidTokenAmount);
+        }
         let equivalent_token_amount =
             utils::calculate_staked_tokens(staked_token_amount.0, self.price.0);
         let fee_percentage: Result<f64, Errors> = if self.st_token_amount.0 == 0 {
@@ -129,7 +155,10 @@ impl LpPool {
                 self.max_fee.0,
                 self.min_fee.0,
                 self.liquidity_target.0,
-                self.token_amount.0 - equivalent_token_amount,
+                self.token_amount
+                    .0
+                    .checked_sub(equivalent_token_amount)
+                    .ok_or(Errors::SubtractionOverflow)?,
             )?)
         };
 
@@ -140,9 +169,21 @@ impl LpPool {
             return Err(Errors::InsufficientLiquidity);
         }
 
-        self.st_token_amount.0 += staked_token_amount.0;
-        self.token_amount.0 -= final_token_amount;
-        self.lp_token_amount.0 -= equivalent_token_amount - final_token_amount;
+        self.st_token_amount.0 = self
+            .st_token_amount
+            .0
+            .checked_add(staked_token_amount.0)
+            .ok_or(Errors::AdditionOverflow)?;
+        self.token_amount.0 = self
+            .token_amount
+            .0
+            .checked_sub(final_token_amount)
+            .ok_or(Errors::SubtractionOverflow)?;
+        self.lp_token_amount.0 = self
+            .lp_token_amount
+            .0
+            .checked_sub(equivalent_token_amount - final_token_amount)
+            .ok_or(Errors::SubtractionOverflow)?;
 
         Ok(TokenAmount(final_token_amount))
     }
