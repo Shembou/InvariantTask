@@ -1,70 +1,30 @@
 use super::enums::Errors;
 use super::structs::*;
+use super::utils::*;
+use crate::lp_pool::utils::utils::FIXED_POINTS_DECIMALS_MULTIPLIER;
 
 impl LpPool {
-    const FIXED_POINTS_DECIMALS_MULTIPLIER: u64 = 1000000;
-
-    fn proportional(&self, amount: u64, numerator: u64, denominator: u64) -> Result<f64, Errors> {
-        if denominator == 0 {
-            return Ok(amount as f64);
-        }
-        let receive_amount = (amount as f64 * numerator as f64) / denominator as f64;
-        if receive_amount == 0.0 {
-            return Err(Errors::MultiplicationError);
-        }
-
-        Ok(receive_amount as f64)
-    }
-    fn calculate_added_liquidity_fee(&self, token_amount: u64) -> Result<f64, Errors> {
-        if token_amount >= self.liquidity_target.0 {
-            Ok(self.min_fee.0 as f64)
-        } else {
-            let calculation_result = self.proportional(
-                self.max_fee.0.saturating_sub(self.min_fee.0),
-                token_amount,
-                self.liquidity_target.0,
-            )?;
-
-            let fee = self.max_fee.0 as f64 - calculation_result;
-
-            Ok(fee)
-        }
-    }
-
-    fn validate_input(&self) -> Result<(), Errors> {
-        if self.min_fee.0 > self.max_fee.0 {
-            return Err(Errors::InvalidFeeRange);
-        }
-
-        if self.liquidity_target.0 == 0 {
-            return Err(Errors::InvalidLiquidityTarget);
-        }
-
-        Ok(())
-    }
-
     fn calculate_total_lp_tokens(self: &mut Self) -> Result<u64, Errors> {
         let equivalent_token_amount =
-            (self.st_token_amount.0 * self.price.0) / Self::FIXED_POINTS_DECIMALS_MULTIPLIER;
+            (self.st_token_amount.0 * self.price.0) / FIXED_POINTS_DECIMALS_MULTIPLIER;
 
         let fee_percentage: Result<f64, Errors> = if self.st_token_amount.0 == 0 {
             Ok(self.min_fee.0 as f64)
         } else {
-            Ok(self
-                .calculate_added_liquidity_fee(self.lp_token_amount.0 - equivalent_token_amount)?)
+            Ok(utils::calculate_added_liquidity_fee(
+                self.max_fee.0,
+                self.min_fee.0,
+                self.liquidity_target.0,
+                self.lp_token_amount.0 - equivalent_token_amount,
+            )?)
         };
-        let fee_multiplier =
-            (Self::FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0) - fee_percentage?;
+        let fee_multiplier = (FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0) - fee_percentage?;
         let final_token_amount = (equivalent_token_amount as f64 * fee_multiplier as f64)
-            / (Self::FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0);
+            / (FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0);
 
         let total_lp_tokens = (equivalent_token_amount as f64 - final_token_amount as f64)
             + self.lp_token_amount.0 as f64;
         return Ok(total_lp_tokens as u64);
-    }
-
-    fn round_up_to_nearest_ten(value: f64) -> u64 {
-        ((value / 10.0).ceil() * 10.0) as u64
     }
 
     pub fn init(
@@ -83,8 +43,7 @@ impl LpPool {
             max_fee,
         };
 
-        pool.validate_input()?;
-
+        utils::validate_input(pool.min_fee.0, pool.max_fee.0, pool.liquidity_target.0)?;
         Ok(pool)
     }
 
@@ -96,10 +55,11 @@ impl LpPool {
             LpTokenAmount(token_amount.0)
         } else {
             let calculated_lp_tokens = self.calculate_total_lp_tokens()?;
-            let multiplier: f64 = self.lp_token_amount.0 as f64 / calculated_lp_tokens as f64;
-            let proportional_lp_tokens = token_amount.0 as f64 * multiplier;
-            let final_token_amount = Self::round_up_to_nearest_ten(proportional_lp_tokens);
-            LpTokenAmount(final_token_amount as u64)
+            let final_token_amount = utils::multiply_add_liquidity_token_amount(
+                self.token_amount.0,
+                calculated_lp_tokens,
+            );
+            LpTokenAmount(final_token_amount)
         };
 
         self.token_amount.0 += lp_tokens_minted.0;
@@ -115,15 +75,18 @@ impl LpPool {
         //TODO: Add remove_liquidity logic
         if self.st_token_amount.0 != 0 {
             let equivalent_token_amount =
-                (self.st_token_amount.0 * self.price.0) / Self::FIXED_POINTS_DECIMALS_MULTIPLIER;
+                (self.st_token_amount.0 * self.price.0) / FIXED_POINTS_DECIMALS_MULTIPLIER;
 
-            let fee_percentage =
-                self.calculate_added_liquidity_fee(self.token_amount.0 - equivalent_token_amount)?;
-            let fee_multiplier =
-                (Self::FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0) - fee_percentage;
+            let fee_percentage = utils::calculate_added_liquidity_fee(
+                self.max_fee.0,
+                self.min_fee.0,
+                self.liquidity_target.0,
+                self.token_amount.0 - equivalent_token_amount,
+            )?;
+            let fee_multiplier = (FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0) - fee_percentage;
             let f64_token_value = (equivalent_token_amount as f64 * fee_multiplier as f64)
-                / (Self::FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0);
-            let mut final_token_amount = Self::round_up_to_nearest_ten(f64_token_value);
+                / (FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0);
+            let mut final_token_amount = utils::round_up_to_nearest_ten(f64_token_value);
             if final_token_amount >= lp_token_amount.0 {
                 final_token_amount -= lp_token_amount.0;
 
@@ -133,12 +96,17 @@ impl LpPool {
             } else {
                 let mut total_tokens = lp_token_amount.0;
                 total_tokens -= final_token_amount;
-                let calculated_fee = self.calculate_added_liquidity_fee(total_tokens)?;
+                let calculated_fee = utils::calculate_added_liquidity_fee(
+                    self.max_fee.0,
+                    self.min_fee.0,
+                    self.liquidity_target.0,
+                    total_tokens,
+                )?;
                 let fee_multiplier =
-                    (Self::FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0) - calculated_fee;
+                    (FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0) - calculated_fee;
                 let f64_token_value = (total_tokens as f64 * fee_multiplier as f64)
-                    / (Self::FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0);
-                total_tokens = Self::round_up_to_nearest_ten(f64_token_value);
+                    / (FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0);
+                total_tokens = utils::round_up_to_nearest_ten(f64_token_value);
 
                 return Ok((
                     TokenAmount(total_tokens),
@@ -153,18 +121,20 @@ impl LpPool {
 
     pub fn swap(&mut self, staked_token_amount: StakedTokenAmount) -> Result<TokenAmount, Errors> {
         let equivalent_token_amount =
-            (staked_token_amount.0 * self.price.0) / Self::FIXED_POINTS_DECIMALS_MULTIPLIER;
+            utils::calculate_staked_tokens(staked_token_amount.0, self.price.0);
         let fee_percentage: Result<f64, Errors> = if self.st_token_amount.0 == 0 {
             Ok(self.min_fee.0 as f64)
         } else {
-            Ok(self.calculate_added_liquidity_fee(self.token_amount.0 - equivalent_token_amount)?)
+            Ok(utils::calculate_added_liquidity_fee(
+                self.max_fee.0,
+                self.min_fee.0,
+                self.liquidity_target.0,
+                self.token_amount.0 - equivalent_token_amount,
+            )?)
         };
-        let fee_multiplier =
-            (Self::FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0) - fee_percentage?;
-        let f64_token_value = (equivalent_token_amount as f64 * fee_multiplier as f64)
-            / (Self::FIXED_POINTS_DECIMALS_MULTIPLIER as f64 / 100.0);
 
-        let final_token_amount = Self::round_up_to_nearest_ten(f64_token_value);
+        let final_token_amount =
+            utils::multiply_swap_token_amount(fee_percentage?, equivalent_token_amount);
 
         if self.token_amount.0 <= final_token_amount {
             return Err(Errors::InsufficientLiquidity);

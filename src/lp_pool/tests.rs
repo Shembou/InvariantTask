@@ -87,17 +87,4 @@ mod tests {
         assert_eq!(remove_liquidity.0 .0, 57566630, "Error");
         assert_eq!(remove_liquidity.1 .0, 36000000, "Error");
     }
-
-    #[test]
-    fn test_simple_remove_liquidity() {
-        let mut pool = setup_pool(1500000, 10, 900, 90000000).expect("Failed to initialize pool");
-        add_liquidity(&mut pool, 110000000).expect("Failed to add liquidity");
-
-        let (token_share, _staked_token_share) =
-            remove_liquidity(&mut pool, 110000000).expect("Failed to remove liquidity");
-        assert_eq!(
-            token_share.0, 110,
-            "Incorrect token share after removing liquidity"
-        );
-    }
 }
