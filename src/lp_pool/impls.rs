@@ -71,8 +71,9 @@ impl LpPool {
         } else {
             let calculated_lp_tokens = self.calculate_total_staked_token_amount()?;
             let final_token_amount = utils::multiply_add_liquidity_token_amount(
-                self.token_amount.0,
+                self.lp_token_amount.0,
                 calculated_lp_tokens,
+                token_amount.0,
             );
             LpTokenAmount(final_token_amount)
         };
@@ -96,6 +97,7 @@ impl LpPool {
         lp_token_amount: LpTokenAmount,
     ) -> Result<(TokenAmount, StakedTokenAmount), Errors> {
         //TODO: Add remove_liquidity logic
+        let removal_ratio = lp_token_amount.0 / self.liquidity_target.0;
         if self.st_token_amount.0 != 0 {
             let equivalent_token_amount =
                 (self.st_token_amount.0 * self.price.0) / FIXED_POINTS_DECIMALS_MULTIPLIER;

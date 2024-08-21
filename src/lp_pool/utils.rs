@@ -62,9 +62,13 @@ pub mod utils {
         final_token_amount
     }
 
-    pub fn multiply_add_liquidity_token_amount(lp_token_amount: u64, calculated_lp_tokens: u64) -> u64 {
+    pub fn multiply_add_liquidity_token_amount(
+        lp_token_amount: u64,
+        calculated_lp_tokens: u64,
+        token_amount: u64,
+    ) -> u64 {
         let multiplier: f64 = lp_token_amount as f64 / calculated_lp_tokens as f64;
-        let proportional_lp_tokens = lp_token_amount as f64 * multiplier;
+        let proportional_lp_tokens = token_amount as f64 * multiplier;
         let result = round_up_to_nearest_ten(proportional_lp_tokens);
         result
     }

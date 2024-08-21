@@ -75,10 +75,10 @@ mod tests {
             "Incorrect LP token amount after adding liquidity"
         );
 
-        let swapped_tokens2 =
+        let new_swapped_tokens =
             swap_tokens(&mut pool, 30000000).expect("Failed to swap staked tokens");
         assert_eq!(
-            swapped_tokens2.0, 43442370,
+            new_swapped_tokens.0, 43442370,
             "Incorrect LP token amount after adding liquidity"
         );
 
